@@ -296,14 +296,14 @@ impl LsmStorageInner {
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
         // Take a read lock on state to access the memtables
         let state = self.state.read();
-        
+
         // First check the current memtable
         if let Some(value) = state.memtable.get(key) {
             // If we found a tombstone (empty value), return None
             // Otherwise return the value
             return Ok(if value.is_empty() { None } else { Some(value) });
         }
-        
+
         // Then check all immutable memtables from latest to earliest
         for memtable in &state.imm_memtables {
             if let Some(value) = memtable.get(key) {
@@ -312,7 +312,7 @@ impl LsmStorageInner {
                 return Ok(if value.is_empty() { None } else { Some(value) });
             }
         }
-        
+
         // Key not found in any memtable
         Ok(None)
     }
@@ -326,18 +326,18 @@ impl LsmStorageInner {
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         // Take a read lock to access the memtable
         let state = self.state.read();
-        
+
         // Put the key-value pair into the memtable
         state.memtable.put(key, value)?;
-        
+
         // Check if memtable size exceeds limit
         if state.memtable.approximate_size() >= self.options.target_sst_size {
             // Drop read lock before taking state_lock
             drop(state);
-            
+
             // Take state lock to synchronize freezing
             let state_lock = self.state_lock.lock();
-            
+
             // Re-check size after acquiring lock (double-check pattern)
             let state = self.state.read();
             if state.memtable.approximate_size() >= self.options.target_sst_size {
@@ -346,7 +346,7 @@ impl LsmStorageInner {
                 self.force_freeze_memtable(&state_lock)?;
             }
         }
-        
+
         Ok(())
     }
 
@@ -380,17 +380,19 @@ impl LsmStorageInner {
     pub fn force_freeze_memtable(&self, state_lock_observer: &MutexGuard<'_, ()>) -> Result<()> {
         // Create new memtable first (outside the write lock)
         let new_memtable = MemTable::create(self.next_sst_id());
-        
+
         // Take write lock to modify state
         let mut state = self.state.write();
-        
+
         // Move current memtable to imm_memtables (push front since we store latest to earliest)
         let old_state = Arc::make_mut(&mut state);
-        old_state.imm_memtables.insert(0, old_state.memtable.clone());
-        
+        old_state
+            .imm_memtables
+            .insert(0, old_state.memtable.clone());
+
         // Set new memtable as current
         old_state.memtable = Arc::new(new_memtable);
-        
+
         Ok(())
     }
 

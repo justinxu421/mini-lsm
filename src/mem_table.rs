@@ -102,13 +102,12 @@ impl MemTable {
         let value_size = value.len();
 
         // Insert the key-value pair into the skipmap
-        self.map.insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
+        self.map
+            .insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
 
         // Update approximate size
-        self.approximate_size.fetch_add(
-            key_size + value_size,
-            std::sync::atomic::Ordering::Relaxed
-        );
+        self.approximate_size
+            .fetch_add(key_size + value_size, std::sync::atomic::Ordering::Relaxed);
 
         Ok(())
     }
@@ -126,8 +125,20 @@ impl MemTable {
     }
 
     /// Get an iterator over a range of keys.
-    pub fn scan(&self, _lower: Bound<&[u8]>, _upper: Bound<&[u8]>) -> MemTableIterator {
-        unimplemented!()
+    pub fn scan(&self, lower: Bound<&[u8]>, upper: Bound<&[u8]>) -> MemTableIterator {
+        let lower = map_bound(lower);
+        let upper = map_bound(upper);
+        
+        let mut iter = MemTableIteratorBuilder {
+            map: self.map.clone(),
+            iter_builder: |map| map.range((lower, upper)),
+            item: (Bytes::new(), Bytes::new()),
+        }
+        .build();
+        
+        // Initialize the iterator with the first element
+        let _ = iter.next();
+        iter
     }
 
     /// Flush the mem-table to SSTable. Implement in week 1 day 6.
@@ -141,7 +152,8 @@ impl MemTable {
 
     /// Get the current approximate size of the memtable
     pub fn approximate_size(&self) -> usize {
-        self.approximate_size.load(std::sync::atomic::Ordering::Relaxed)
+        self.approximate_size
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Only use this function when closing the database
@@ -173,18 +185,30 @@ impl StorageIterator for MemTableIterator {
     type KeyType<'a> = KeySlice<'a>;
 
     fn value(&self) -> &[u8] {
-        unimplemented!()
+        self.borrow_item().1.as_ref()
     }
 
     fn key(&self) -> KeySlice {
-        unimplemented!()
+        KeySlice::from_slice(self.borrow_item().0.as_ref())
     }
 
     fn is_valid(&self) -> bool {
-        unimplemented!()
+        !self.borrow_item().0.is_empty()
     }
 
     fn next(&mut self) -> Result<()> {
-        unimplemented!()
+        // Process the entry after the immutable borrow is dropped
+        let (key, value) = if let Some(entry) = self.with_iter_mut(|iter| iter.next()) {
+            (entry.key().clone(), entry.value().clone())
+        } else {
+            (Bytes::new(), Bytes::new())
+        };
+        
+        // Now we can safely perform the mutable borrow
+        self.with_mut(|this| {
+            *this.item = (key, value);
+        });
+        
+        Ok(())
     }
 }
