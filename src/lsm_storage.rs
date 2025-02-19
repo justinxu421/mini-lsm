@@ -294,19 +294,27 @@ impl LsmStorageInner {
 
     /// Get a key from the storage
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
-        // Take a read lock on state to access the memtable
+        // Take a read lock on state to access the memtables
         let state = self.state.read();
         
-        // Get value from memtable
-        let value = state.memtable.get(key);
-        
-        // If value exists but is empty (tombstone), return None
-        // Otherwise return the value
-        match value {
-            Some(v) if v.is_empty() => Ok(None),
-            Some(v) => Ok(Some(v)),
-            None => Ok(None),
+        // First check the current memtable
+        if let Some(value) = state.memtable.get(key) {
+            // If we found a tombstone (empty value), return None
+            // Otherwise return the value
+            return Ok(if value.is_empty() { None } else { Some(value) });
         }
+        
+        // Then check all immutable memtables from latest to earliest
+        for memtable in &state.imm_memtables {
+            if let Some(value) = memtable.get(key) {
+                // If we found a tombstone (empty value), return None
+                // Otherwise return the value
+                return Ok(if value.is_empty() { None } else { Some(value) });
+            }
+        }
+        
+        // Key not found in any memtable
+        Ok(None)
     }
 
     /// Write a batch of data into the storage. Implement in week 2 day 7.
