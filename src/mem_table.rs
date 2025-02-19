@@ -102,12 +102,13 @@ impl MemTable {
         let value_size = value.len();
 
         // Insert the key-value pair into the skipmap
-        self.map
-            .insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
+        self.map.insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
 
         // Update approximate size
-        self.approximate_size
-            .fetch_add(key_size + value_size, std::sync::atomic::Ordering::Relaxed);
+        self.approximate_size.fetch_add(
+            key_size + value_size,
+            std::sync::atomic::Ordering::Relaxed
+        );
 
         Ok(())
     }
@@ -138,9 +139,9 @@ impl MemTable {
         self.id
     }
 
+    /// Get the current approximate size of the memtable
     pub fn approximate_size(&self) -> usize {
-        self.approximate_size
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.approximate_size.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Only use this function when closing the database
