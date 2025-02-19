@@ -52,11 +52,13 @@ pub(crate) fn map_bound(bound: Bound<&[u8]>) -> Bound<Bytes> {
 
 impl MemTable {
     /// Create a new mem-table.
-    pub fn create(_id: usize) -> Self {
-        map: Arc::new(SkipMap::new()),
-        wal: None,
-        id,
-        approximate_size: Arc::new(AtomicUsize::new(0)),
+    pub fn create(id: usize) -> Self {
+        Self {
+            map: Arc::new(SkipMap::new()),
+            wal: None,
+            id,
+            approximate_size: Arc::new(AtomicUsize::new(0)),
+        }
     }
 
     /// Create a new mem-table with WAL
@@ -66,7 +68,7 @@ impl MemTable {
 
     /// Create a memtable from WAL
     pub fn recover_from_wal(_id: usize, _path: impl AsRef<Path>) -> Result<Self> {
-        Self::create(id).with_wal(path)
+        unimplemented!()
     }
 
     pub fn for_testing_put_slice(&self, key: &[u8], value: &[u8]) -> Result<()> {
@@ -86,7 +88,7 @@ impl MemTable {
     }
 
     /// Get a value by key.
-    pub fn get(&self, _key: &[u8]) -> Option<Bytes> {
+    pub fn get(&self, key: &[u8]) -> Option<Bytes> {
         self.map.get(key).map(|entry| entry.value().clone())
     }
 
@@ -95,8 +97,19 @@ impl MemTable {
     /// In week 1, day 1, simply put the key-value pair into the skipmap.
     /// In week 2, day 6, also flush the data to WAL.
     /// In week 3, day 5, modify the function to use the batch API.
-    pub fn put(&self, _key: &[u8], _value: &[u8]) -> Result<()> {
-        unimplemented!()
+    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        let key_size = key.len();
+        let value_size = value.len();
+
+        // Insert the key-value pair into the skipmap
+        self.map
+            .insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
+
+        // Update approximate size
+        self.approximate_size
+            .fetch_add(key_size + value_size, std::sync::atomic::Ordering::Relaxed);
+
+        Ok(())
     }
 
     /// Implement this in week 3, day 5.
