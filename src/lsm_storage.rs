@@ -292,9 +292,21 @@ impl LsmStorageInner {
         compaction_filters.push(compaction_filter);
     }
 
-    /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
-    pub fn get(&self, _key: &[u8]) -> Result<Option<Bytes>> {
-        unimplemented!()
+    /// Get a key from the storage
+    pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
+        // Take a read lock on state to access the memtable
+        let state = self.state.read();
+        
+        // Get value from memtable
+        let value = state.memtable.get(key);
+        
+        // If value exists but is empty (tombstone), return None
+        // Otherwise return the value
+        match value {
+            Some(v) if v.is_empty() => Ok(None),
+            Some(v) => Ok(Some(v)),
+            None => Ok(None),
+        }
     }
 
     /// Write a batch of data into the storage. Implement in week 2 day 7.
@@ -302,14 +314,22 @@ impl LsmStorageInner {
         unimplemented!()
     }
 
-    /// Put a key-value pair into the storage by writing into the current memtable.
-    pub fn put(&self, _key: &[u8], _value: &[u8]) -> Result<()> {
-        unimplemented!()
+    /// Put a key-value pair into the storage by writing into the current memtable
+    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        // Take a read lock on state to access the memtable
+        let state = self.state.read();
+        
+        // Put the key-value pair into the memtable
+        state.memtable.put(key, value)
     }
 
-    /// Remove a key from the storage by writing an empty value.
-    pub fn delete(&self, _key: &[u8]) -> Result<()> {
-        unimplemented!()
+    /// Remove a key from the storage by writing a tombstone
+    pub fn delete(&self, key: &[u8]) -> Result<()> {
+        // Take a read lock on state to access the memtable
+        let state = self.state.read();
+        
+        // Put a tombstone (empty value) for the key
+        state.memtable.put(key, &[])
     }
 
     pub(crate) fn path_of_sst_static(path: impl AsRef<Path>, id: usize) -> PathBuf {
